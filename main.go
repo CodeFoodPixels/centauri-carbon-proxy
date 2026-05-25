@@ -16,16 +16,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := logging.NewLogger()
-	printerIp := os.Getenv("PRINTER_IP")
-	if printerIp == "" {
-		logger.Fatal("PRINTER_IP not set")
-	}
 
-	config, err := types.NewConfig(printerIp, os.Getenv("PROXY_HOSTNAME"), os.Getenv("PROXY_PORT"))
+	config, err := types.NewConfig(logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	logger.Debugf("Local IP: %s", config.LocalIp)
 
 	serveMux := http.ServeMux{}
 
@@ -39,13 +34,13 @@ func main() {
 	addRoutes(&serveMux, fileRoutes)
 
 	httpServer := &http.Server{
-		Addr:           fmt.Sprintf(":%s", config.Port),
+		Addr:           fmt.Sprintf(":%d", config.Port),
 		Handler:        &serveMux,
 		ReadTimeout:    0,
 		WriteTimeout:   0,
 		MaxHeaderBytes: 1 << 20,
 	}
-	logger.Infof("Starting web server on port %s", config.Port)
+	logger.Infof("Starting web server on port %d", config.Port)
 	logger.Fatal(httpServer.ListenAndServe())
 }
 

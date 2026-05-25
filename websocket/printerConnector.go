@@ -51,6 +51,7 @@ func (pc *PrinterConnector) runLoop() {
 		pc.logger.Errorf("Error connecting to printer: %s", err.Error())
 		return
 	}
+	connection.SetReadLimit(-1)
 
 	pc.connection = connection
 	go pc.readLoop(ctx)

@@ -3,12 +3,15 @@ package transformer
 import (
 	"bytes"
 	"centauri-carbon-proxy/types"
+	"fmt"
 	"io"
 )
 
 var (
 	httpBytes          = []byte("http://")
-	doubleSlashBytes   = []byte("//")
+	httpsBytes         = []byte("https://")
+	wsBytes            = []byte("ws://")
+	wssBytes           = []byte("wss://")
 	websocketPortBytes = []byte(":3030")
 	videoPortBytes     = []byte(":3031")
 )
@@ -19,12 +22,17 @@ type Replacement struct {
 }
 
 func TransformWebsocketFrame(config types.Config, data []byte) []byte {
-	replacements := []Replacement{
-		{httpBytes, doubleSlashBytes},
-		{config.PrinterIpBytes, config.HostnameBytes},
-		{websocketPortBytes, []byte{}},
-		{videoPortBytes, []byte{}},
+	replacements := []Replacement{}
+	if config.UseHttps {
+		replacements = append(replacements, Replacement{httpBytes, httpsBytes}, Replacement{wsBytes, wssBytes})
 	}
+	replacements = append(
+		replacements,
+		Replacement{config.PrinterUrlBytes, config.AppUrlBytes},
+		Replacement{config.PrinterIpBytes, config.AppHostBytes},
+		Replacement{websocketPortBytes, []byte{}},
+		Replacement{videoPortBytes, []byte{}},
+	)
 
 	for _, replacement := range replacements {
 		data = bytes.ReplaceAll(data, replacement.Find, replacement.Replace)
@@ -34,12 +42,24 @@ func TransformWebsocketFrame(config types.Config, data []byte) []byte {
 }
 
 func TransformReaderWriter(config types.Config, dst io.Writer, src io.Reader, buffer io.Writer) error {
-	replacements := []Replacement{
-		{httpBytes, doubleSlashBytes},
-		{config.PrinterIpBytes, config.HostnameBytes},
-		{websocketPortBytes, []byte{}},
-		{videoPortBytes, []byte{}},
-		{[]byte("${this.webSocketService.hostName}:80"), []byte("${this.webSocketService.hostName}")},
+	replacements := []Replacement{}
+	if config.UseHttps {
+		replacements = append(replacements, Replacement{httpBytes, httpsBytes}, Replacement{wsBytes, wssBytes})
+	}
+
+	replacements = append(
+		replacements,
+		Replacement{config.PrinterUrlBytes, config.AppUrlBytes},
+		Replacement{config.PrinterWsUrlBytes, config.AppWsUrlBytes},
+		Replacement{websocketPortBytes, []byte{}},
+		Replacement{videoPortBytes, []byte{}},
+		Replacement{[]byte("this.hostName=window.location.hostname"), []byte("this.hostName=`${window.location.hostname}${window.location.port?`:${window.location.port}`:''}`")},
+		Replacement{[]byte("${this.webSocketService.hostName}:80"), []byte("${this.webSocketService.hostName}")},
+		Replacement{[]byte("</body>"), []byte(fmt.Sprintf("<script>if(window.location.origin !== '%s'){window.location.href=window.location.href.replace(window.location.origin, '%s')}</script></body>", config.AppUrl, config.AppUrl))},
+	)
+
+	if len(config.CustomCssBytes) > 0 {
+		replacements = append(replacements, Replacement{[]byte("</body>"), bytes.Join([][]byte{[]byte("<style>"), config.CustomCssBytes, []byte("</style></body>")}, []byte{})})
 	}
 
 	buf := []byte{}
