@@ -59,6 +59,7 @@ func NewConfig(logger logging.Logger) (Config, error) {
 		appUrl = fmt.Sprintf("%s://%s", parsedUrl.Scheme, parsedUrl.Host)
 		appHost = parsedUrl.Host
 		if parsedUrl.Scheme == "https" {
+			useHttps = true
 			appWsUrl = fmt.Sprintf("wss://%s", parsedUrl.Host)
 		} else {
 			appWsUrl = fmt.Sprintf("ws://%s", parsedUrl.Host)
