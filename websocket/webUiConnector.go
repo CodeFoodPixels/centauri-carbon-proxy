@@ -38,24 +38,6 @@ func NewWebUiConnector(ctx context.Context, logger logging.Logger, config types.
 
 func (wc *WebUiConnector) Start() {
 	go wc.writeLoop()
-	go wc.startHttpServer()
-}
-
-func (wc *WebUiConnector) startHttpServer() {
-	serveMux := http.ServeMux{}
-
-	for route, handler := range wc.Routes {
-		serveMux.HandleFunc(route, handler)
-	}
-
-	httpServer := &http.Server{
-		Addr:           ":3030",
-		Handler:        &serveMux,
-		ReadTimeout:    0,
-		WriteTimeout:   0,
-		MaxHeaderBytes: 1 << 20,
-	}
-	wc.logger.Fatal(httpServer.ListenAndServe())
 }
 
 func (wc *WebUiConnector) SubscribeHandler(w http.ResponseWriter, r *http.Request) {
