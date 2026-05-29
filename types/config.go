@@ -42,7 +42,7 @@ func NewConfig(logger logging.Logger) (Config, error) {
 
 	port, err := strconv.Atoi(os.Getenv("PROXY_PORT"))
 	if err != nil {
-		port = 3000
+		port = 3030
 		logger.Infof("PROXY_PORT not set or set to invalid value, defaulting to %d", port)
 	}
 

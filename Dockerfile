@@ -9,5 +9,5 @@ RUN go build -o centauri-carbon-proxy
 FROM alpine:latest
 
 COPY --from=builder /app/centauri-carbon-proxy .
-EXPOSE 3000
+EXPOSE 3030
 CMD ["/centauri-carbon-proxy"]
