@@ -16,53 +16,99 @@ var (
 	videoPortBytes     = []byte(":3031")
 )
 
-type Replacement struct {
+type Transformer struct {
 	Find    []byte
 	Replace []byte
+	buf     []byte
+}
+
+func (t *Transformer) Transform(src []byte, flush bool) []byte {
+	if len(t.Find) == 0 {
+		return src
+	}
+
+	output := []byte{}
+	t.buf = append(t.buf, src...)
+
+	for {
+		i := bytes.Index(t.buf, t.Find)
+		if i == -1 {
+			break
+		}
+		output = append(output, t.buf[:i]...)
+		output = append(output, t.Replace...)
+		t.buf = t.buf[i+len(t.Find):]
+	}
+
+	tailChars := len(t.buf) - (len(t.Find) - 1)
+	if tailChars > 0 {
+		output = append(output, t.buf[:tailChars]...)
+		t.buf = t.buf[tailChars:]
+	}
+
+	if flush {
+		output = append(output, t.buf...)
+		t.buf = []byte{}
+	}
+	return output
+}
+
+type Chain struct {
+	Transformers []Transformer
+}
+
+func (c *Chain) Process(src []byte, flush bool) []byte {
+	output := src
+	for i, transformer := range c.Transformers {
+		output = transformer.Transform(output, flush)
+		c.Transformers[i] = transformer
+	}
+
+	return output
 }
 
 func TransformWebsocketFrame(config types.Config, data []byte) []byte {
-	replacements := []Replacement{}
+	transformers := []Transformer{}
 	if config.UseHttps {
-		replacements = append(replacements, Replacement{httpBytes, httpsBytes}, Replacement{wsBytes, wssBytes})
+		transformers = append(transformers, Transformer{Find: httpBytes, Replace: httpsBytes}, Transformer{Find: wsBytes, Replace: wssBytes})
 	}
-	replacements = append(
-		replacements,
-		Replacement{config.PrinterUrlBytes, config.AppUrlBytes},
-		Replacement{config.PrinterIpBytes, config.AppHostBytes},
-		Replacement{websocketPortBytes, []byte{}},
-		Replacement{videoPortBytes, []byte{}},
+
+	transformers = append(
+		transformers,
+		Transformer{Find: websocketPortBytes, Replace: []byte{}},
+		Transformer{Find: videoPortBytes, Replace: []byte{}},
+		Transformer{Find: config.PrinterUrlBytes, Replace: config.AppUrlBytes},
+		Transformer{Find: config.PrinterIpBytes, Replace: config.AppHostBytes},
 	)
 
-	for _, replacement := range replacements {
-		data = bytes.ReplaceAll(data, replacement.Find, replacement.Replace)
-	}
+	chain := Chain{Transformers: transformers}
 
-	return data
+	return chain.Process(data, true)
 }
 
 func TransformReaderWriter(config types.Config, dst io.Writer, src io.Reader, buffer io.Writer) error {
-	replacements := []Replacement{}
+	transformers := []Transformer{}
 	if config.UseHttps {
-		replacements = append(replacements, Replacement{httpBytes, httpsBytes}, Replacement{wsBytes, wssBytes})
+		transformers = append(transformers, Transformer{Find: httpBytes, Replace: httpsBytes}, Transformer{Find: wsBytes, Replace: wssBytes})
 	}
 
-	replacements = append(
-		replacements,
-		Replacement{config.PrinterUrlBytes, config.AppUrlBytes},
-		Replacement{config.PrinterWsUrlBytes, config.AppWsUrlBytes},
-		Replacement{websocketPortBytes, []byte{}},
-		Replacement{videoPortBytes, []byte{}},
-		Replacement{[]byte("this.hostName=window.location.hostname"), []byte("this.hostName=`${window.location.hostname}${window.location.port?`:${window.location.port}`:''}`")},
-		Replacement{[]byte("${this.webSocketService.hostName}:80"), []byte("${this.webSocketService.hostName}")},
-		Replacement{[]byte("</body>"), []byte(fmt.Sprintf("<script>if(window.location.origin !== '%s'){window.location.href=window.location.href.replace(window.location.origin, '%s')}</script></body>", config.AppUrl, config.AppUrl))},
+	transformers = append(
+		transformers,
+		Transformer{Find: websocketPortBytes, Replace: []byte{}},
+		Transformer{Find: videoPortBytes, Replace: []byte{}},
+		Transformer{Find: config.PrinterWsUrlBytes, Replace: config.AppWsUrlBytes},
+		Transformer{Find: config.PrinterUrlBytes, Replace: config.AppUrlBytes},
+		Transformer{Find: []byte("this.hostName=window.location.hostname"), Replace: []byte("this.hostName=`${window.location.hostname}${window.location.port?`:${window.location.port}`:''}`")},
+		Transformer{Find: []byte("${this.webSocketService.hostName}:80"), Replace: []byte("${this.webSocketService.hostName}")},
+		Transformer{Find: []byte("</body>"), Replace: []byte(fmt.Sprintf("<script>if(window.location.origin !== '%s'){window.location.href=window.location.href.replace(window.location.origin, '%s')}</script></body>", config.AppUrl, config.AppUrl))},
 	)
 
 	if len(config.CustomCssBytes) > 0 {
-		replacements = append(replacements, Replacement{[]byte("</body>"), bytes.Join([][]byte{[]byte("<style>"), config.CustomCssBytes, []byte("</style></body>")}, []byte{})})
+		transformers = append(transformers, Transformer{Find: []byte("</body>"), Replace: bytes.Join([][]byte{[]byte("<style>"), config.CustomCssBytes, []byte("</style></body>")}, []byte{})})
 	}
 
-	buf := []byte{}
+	chain := Chain{Transformers: transformers}
+
 	readBufSize := 32 * 1024
 	readBuf := make([]byte, readBufSize)
 	isEOF := false
@@ -74,29 +120,19 @@ func TransformReaderWriter(config types.Config, dst io.Writer, src io.Reader, bu
 
 		isEOF = err == io.EOF
 
-		buf = append(buf, readBuf[:n]...)
-
-		for _, replacement := range replacements {
-			matchCount := bytes.Count(buf, replacement.Find)
-			if matchCount > 0 {
-				buf = bytes.ReplaceAll(buf, replacement.Find, replacement.Replace)
-			}
-		}
-
-		splitPos := len(buf) - n
-
-		_, err = dst.Write(buf[:splitPos])
-		if err != nil {
-			return err
-		}
-		_, err = buffer.Write(buf[:splitPos])
-		if err != nil {
-			return err
-		}
-		buf = buf[splitPos:]
-
 		if isEOF && n == 0 {
 			return nil
+		}
+
+		data := chain.Process(readBuf[:n], isEOF)
+
+		_, err = dst.Write(data)
+		if err != nil {
+			return err
+		}
+		_, err = buffer.Write(data)
+		if err != nil {
+			return err
 		}
 	}
 }

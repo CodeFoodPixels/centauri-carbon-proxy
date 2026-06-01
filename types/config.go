@@ -23,14 +23,30 @@ type Config struct {
 	UseHttps          bool
 }
 
-func NewConfig(logger logging.Logger) (Config, error) {
+func NewConfigFromEnv(logger logging.Logger) (Config, error) {
+	printerIp := os.Getenv("PROXY_PRINTER_IP")
+
+	port, err := strconv.Atoi(os.Getenv("PROXY_PORT"))
+	if err != nil {
+		port = 3030
+		logger.Infof("PROXY_PORT not set or set to invalid value, defaulting to %d", port)
+	}
+
+	appUrl := os.Getenv("PROXY_APP_URL")
+
+	customCssPath := os.Getenv("PROXY_CUSTOM_CSS_PATH")
+
+	return NewConfig(logger, printerIp, port, appUrl, customCssPath)
+
+}
+
+func NewConfig(logger logging.Logger, printerIp string, port int, appUrl string, customCssPath string) (Config, error) {
 	useHttps := false
 	localIp, err := getLocalIp()
 	if err != nil {
 		return Config{}, fmt.Errorf("Unable to get local IP: %s", err)
 	}
 
-	printerIp := os.Getenv("PROXY_PRINTER_IP")
 	if printerIp == "" {
 		logger.Fatal("PROXY_PRINTER_IP not set")
 	}
@@ -40,23 +56,17 @@ func NewConfig(logger logging.Logger) (Config, error) {
 		logger.Fatal("invalid value for PROXY_PRINTER_IP")
 	}
 
-	port, err := strconv.Atoi(os.Getenv("PROXY_PORT"))
-	if err != nil {
-		port = 3030
-		logger.Infof("PROXY_PORT not set or set to invalid value, defaulting to %d", port)
-	}
-
-	var appUrl string
+	var finalAppUrl string
 	var appHost string
 	var appWsUrl string
-	parsedUrl, err := url.Parse(os.Getenv("PROXY_APP_URL"))
+	parsedUrl, err := url.Parse(appUrl)
 	if parsedUrl.Host == "" || parsedUrl.Scheme == "" || err != nil {
-		appUrl = fmt.Sprintf("http://%s:%d", localIp, port)
+		finalAppUrl = fmt.Sprintf("http://%s:%d", localIp, port)
 		appWsUrl = fmt.Sprintf("ws://%s:%d", localIp, port)
 		appHost = fmt.Sprintf("%s:%d", localIp, port)
-		logger.Infof("PROXY_APP_URL invalid or not set, defaulting to %s", appUrl)
+		logger.Infof("PROXY_APP_URL invalid or not set, defaulting to %s", finalAppUrl)
 	} else {
-		appUrl = fmt.Sprintf("%s://%s", parsedUrl.Scheme, parsedUrl.Host)
+		finalAppUrl = fmt.Sprintf("%s://%s", parsedUrl.Scheme, parsedUrl.Host)
 		appHost = parsedUrl.Host
 		if parsedUrl.Scheme == "https" {
 			useHttps = true
@@ -66,7 +76,6 @@ func NewConfig(logger logging.Logger) (Config, error) {
 		}
 	}
 
-	customCssPath := os.Getenv("PROXY_CUSTOM_CSS_PATH")
 	var customCssBytes []byte
 	if customCssPath != "" {
 		customCssBytes, err = os.ReadFile(customCssPath)
@@ -80,9 +89,9 @@ func NewConfig(logger logging.Logger) (Config, error) {
 		PrinterIpBytes:    []byte(printerIp),
 		PrinterUrlBytes:   []byte(fmt.Sprintf("http://%s", printerIp)),
 		PrinterWsUrlBytes: []byte(fmt.Sprintf("ws://%s", printerIp)),
-		AppUrl:            appUrl,
+		AppUrl:            finalAppUrl,
 		AppHostBytes:      []byte(appHost),
-		AppUrlBytes:       []byte(appUrl),
+		AppUrlBytes:       []byte(finalAppUrl),
 		AppWsUrlBytes:     []byte(appWsUrl),
 		CustomCssBytes:    customCssBytes,
 		Port:              port,

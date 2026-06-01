@@ -17,7 +17,7 @@ func main() {
 	defer cancel()
 	logger := logging.NewLogger()
 
-	config, err := types.NewConfig(logger)
+	config, err := types.NewConfigFromEnv(logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
