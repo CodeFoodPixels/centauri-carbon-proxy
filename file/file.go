@@ -93,9 +93,11 @@ func (f *File) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *File) Upload(w http.ResponseWriter, r *http.Request) {
+	f.logger.Debug(r.Header)
 	res, err := http.Post(fmt.Sprintf("http://%s/uploadFile/upload", f.config.PrinterIp), r.Header.Get("content-type"), r.Body)
 	if err != nil {
 		f.logger.Errorf("Error uploading file: %s", err.Error())
+		return
 	}
 
 	for key, val := range res.Header {
@@ -108,5 +110,6 @@ func (f *File) Upload(w http.ResponseWriter, r *http.Request) {
 	_, err = io.Copy(w, res.Body)
 	if err != nil {
 		f.logger.Errorf("Error writing response for upload: %s", err.Error())
+		return
 	}
 }

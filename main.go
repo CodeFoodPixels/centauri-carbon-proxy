@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 )
 
 func main() {
@@ -48,11 +47,4 @@ func addRoutes(mux *http.ServeMux, routes types.RouteMap) {
 	for route, handler := range routes {
 		mux.HandleFunc(route, handler)
 	}
-}
-
-func getEnv(key string, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
-	return fallback
 }
