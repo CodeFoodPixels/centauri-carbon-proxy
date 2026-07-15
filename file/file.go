@@ -93,14 +93,11 @@ func (f *File) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *File) Upload(w http.ResponseWriter, r *http.Request) {
-	f.logger.Debug(r.Header)
-	f.logger.Debug(r)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		f.logger.Errorf("Error uploading file: %s", err.Error())
 		return
 	}
-	f.logger.Debug(body)
 	res, err := http.Post(fmt.Sprintf("http://%s/uploadFile/upload", f.config.PrinterIp), r.Header.Get("content-type"), bytes.NewReader(body))
 	if err != nil {
 		f.logger.Errorf("Error uploading file: %s", err.Error())
